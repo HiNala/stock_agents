@@ -4,6 +4,8 @@ import sys
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import pandas as pd
+import argparse
+import asyncio
 
 from src.agents.data_aggregation_agent import DataAggregationAgent
 from src.agents.universe_definition_agent import UniverseDefinitionAgent
@@ -12,6 +14,7 @@ from src.agents.strategy_agent import StrategyAgent
 from src.agents.risk_agent import RiskAgent
 from src.agents.play_agent import PlayAgent
 from src.config.settings import LOG_DIR, CACHE_DIR
+from src.config.model_config import ModelProvider, model_config
 
 # Set up logging
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -33,6 +36,13 @@ class StockAgentsCLI:
         self.play_agent = PlayAgent()
         self.current_data = None
         self.current_universe = None
+        self.agents = {
+            "research": ResearchAgent(),
+            "universe": UniverseDefinitionAgent(),
+            "strategy": StrategyAgent(),
+            "risk": RiskAgent(),
+            "play": PlayAgent()
+        }
         logger.info("CLI initialized with all agents")
 
     def prompt_for_tickers(self) -> List[str]:
@@ -256,45 +266,109 @@ class StockAgentsCLI:
         print("\n6. Generating recommendations...")
         self.generate_recommendations()
 
-    def show_menu(self) -> None:
-        """Display the main menu and handle user input."""
+    async def configure_llm(self, agent_name: str) -> None:
+        """Configure LLM settings for a specific agent through interactive prompts."""
+        if agent_name not in self.agents:
+            print(f"Unknown agent: {agent_name}")
+            return
+
+        print(f"\nConfiguring LLM for {agent_name} agent:")
+        print("Available providers:")
+        for provider in ModelProvider:
+            print(f"- {provider.value}")
+
+        # Get provider
+        while True:
+            provider = input("\nSelect provider: ").strip().lower()
+            try:
+                provider = ModelProvider(provider)
+                break
+            except ValueError:
+                print("Invalid provider. Please try again.")
+
+        # Get model
+        provider_config = model_config.get_provider_config(provider)
+        print("\nAvailable models:")
+        for model in provider_config["available_models"]:
+            print(f"- {model}")
+        
+        model = input("\nSelect model: ").strip()
+        if model not in provider_config["available_models"]:
+            print(f"Warning: {model} is not in the list of available models")
+
+        # Get temperature
+        while True:
+            try:
+                temperature = float(input("\nEnter temperature (0.0-1.0): ").strip())
+                if 0.0 <= temperature <= 1.0:
+                    break
+                print("Temperature must be between 0.0 and 1.0")
+            except ValueError:
+                print("Invalid temperature. Please enter a number.")
+
+        # Get max tokens
+        while True:
+            try:
+                max_tokens = int(input("\nEnter max tokens: ").strip())
+                if max_tokens > 0:
+                    break
+                print("Max tokens must be greater than 0")
+            except ValueError:
+                print("Invalid max tokens. Please enter a number.")
+
+        # Update configuration
+        new_config = {
+            "provider": provider,
+            "model": model,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+
+        self.agents[agent_name].update_llm_config(new_config)
+        print(f"\nSuccessfully updated {agent_name} agent configuration:")
+        print(f"Provider: {provider.value}")
+        print(f"Model: {model}")
+        print(f"Temperature: {temperature}")
+        print(f"Max Tokens: {max_tokens}")
+
+    async def show_current_configs(self) -> None:
+        """Display current LLM configurations for all agents."""
+        print("\nCurrent LLM Configurations:")
+        for agent_name, agent in self.agents.items():
+            config = model_config.get_agent_config(agent_name)
+            print(f"\n{agent_name} agent:")
+            print(f"  Provider: {config['provider'].value}")
+            print(f"  Model: {config['model']}")
+            print(f"  Temperature: {config['temperature']}")
+            print(f"  Max Tokens: {config['max_tokens']}")
+
+    async def run(self) -> None:
+        """Run the CLI interface."""
         while True:
             print("\nStock Agents CLI")
-            print("=" * 50)
-            print("1. Fetch Data")
-            print("2. Define Universe")
-            print("3. Research Universe")
-            print("4. Backtest Strategy")
-            print("5. Analyze Risk")
-            print("6. Generate Recommendations")
-            print("7. Run Full Pipeline")
-            print("0. Exit")
-            
-            choice = input("\nEnter your choice (0-7): ").strip()
-            
-            if choice == "0":
+            print("1. Configure LLM for an agent")
+            print("2. Show current configurations")
+            print("3. Exit")
+
+            choice = input("\nEnter your choice (1-3): ").strip()
+
+            if choice == "1":
+                print("\nAvailable agents:")
+                for agent in self.agents.keys():
+                    print(f"- {agent}")
+                agent_name = input("\nSelect agent to configure: ").strip()
+                await self.configure_llm(agent_name)
+            elif choice == "2":
+                await self.show_current_configs()
+            elif choice == "3":
                 print("Exiting...")
                 break
-            elif choice == "1":
-                self.fetch_data()
-            elif choice == "2":
-                self.define_universe()
-            elif choice == "3":
-                self.research_universe()
-            elif choice == "4":
-                self.backtest_strategy()
-            elif choice == "5":
-                self.analyze_risk()
-            elif choice == "6":
-                self.generate_recommendations()
-            elif choice == "7":
-                self.run_pipeline()
             else:
                 print("Invalid choice. Please try again.")
 
-def main():
+async def main():
     cli = StockAgentsCLI()
-    cli.show_menu()
+    await cli.run()
 
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main()) 

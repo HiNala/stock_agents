@@ -1,15 +1,16 @@
 import logging
 import pandas as pd
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import os
 
 from src.config.settings import CACHE_DIR, LOG_DIR
 from src.agents.data_aggregation_agent import DataAggregationAgent
+from src.llm.base_llm_client import BaseLLMClient
 
 # Set up logging
 os.makedirs(LOG_DIR, exist_ok=True)
 logging.basicConfig(
-    filename=os.path.join(LOG_DIR, 'universe_definition.log'),
+    filename=os.path.join(LOG_DIR, 'universe_definition_agent.log'),
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
@@ -17,11 +18,100 @@ logger = logging.getLogger(__name__)
 
 class UniverseDefinitionAgent:
     def __init__(self):
-        """Initialize the Universe Definition Agent."""
+        """Initialize the universe definition agent with LLM client."""
         self.data_agent = DataAggregationAgent()
         self.cache_dir = CACHE_DIR
         os.makedirs(self.cache_dir, exist_ok=True)
-        logger.info("Universe Definition Agent initialized")
+        self.llm_client = BaseLLMClient("universe_agent")
+        logger.info("Universe definition agent initialized with LLM client")
+
+    def update_llm_config(self, new_config: Dict[str, Any]) -> None:
+        """Update the LLM configuration for the universe definition agent."""
+        self.llm_client.update_config(new_config)
+        logger.info(f"Updated LLM configuration: {new_config}")
+
+    async def define_universe(self, stock_data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
+        """Define a universe of stocks based on the given data."""
+        try:
+            # Prepare the prompt with stock data
+            prompt = self._prepare_universe_prompt(stock_data)
+            
+            # Generate the universe definition using LLM
+            definition = await self.llm_client.generate(prompt)
+            
+            # Parse and structure the definition
+            structured_definition = self._parse_universe_definition(definition)
+            
+            logger.info("Successfully defined universe")
+            return structured_definition
+            
+        except Exception as e:
+            logger.error(f"Error defining universe: {str(e)}")
+            raise
+
+    def _prepare_universe_prompt(self, stock_data: Dict[str, pd.DataFrame]) -> str:
+        """Prepare the universe definition prompt with stock data."""
+        # Extract key metrics from the stock data
+        metrics = self._extract_stock_metrics(stock_data)
+        
+        prompt = f"""
+        Define a universe of stocks based on the following data:
+        
+        Stock Metrics:
+        {metrics}
+        
+        Please provide:
+        1. Universe criteria and filters
+        2. Rationale for inclusion/exclusion
+        3. Expected universe characteristics
+        4. Risk considerations
+        5. Monitoring parameters
+        """
+        
+        return prompt
+
+    def _extract_stock_metrics(self, stock_data: Dict[str, pd.DataFrame]) -> str:
+        """Extract key metrics from the stock data."""
+        metrics = []
+        for ticker, data in stock_data.items():
+            metrics.append(f"\n{ticker}:")
+            metrics.append(f"  - Current Price: {data['Close'].iloc[-1]:.2f}")
+            metrics.append(f"  - Market Cap: {data.get('MarketCap', 'N/A')}")
+            metrics.append(f"  - P/E Ratio: {data.get('PE_Ratio', 'N/A')}")
+            metrics.append(f"  - Volume: {data['Volume'].mean():.2f}")
+        
+        return "\n".join(metrics)
+
+    def _parse_universe_definition(self, definition: str) -> Dict[str, Any]:
+        """Parse the LLM-generated universe definition into a structured format."""
+        sections = {
+            "criteria": "",
+            "rationale": "",
+            "characteristics": "",
+            "risk_considerations": "",
+            "monitoring": ""
+        }
+        
+        current_section = None
+        for line in definition.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+                
+            if "1." in line:
+                current_section = "criteria"
+            elif "2." in line:
+                current_section = "rationale"
+            elif "3." in line:
+                current_section = "characteristics"
+            elif "4." in line:
+                current_section = "risk_considerations"
+            elif "5." in line:
+                current_section = "monitoring"
+            elif current_section:
+                sections[current_section] += line + "\n"
+        
+        return sections
 
     def filter_stocks(
         self,
