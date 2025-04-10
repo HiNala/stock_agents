@@ -13,7 +13,7 @@ from src.agents.research_agent import ResearchAgent
 from src.agents.strategy_agent import StrategyAgent
 from src.agents.risk_agent import RiskAgent
 from src.agents.play_agent import PlayAgent
-from src.config.settings import LOG_DIR, CACHE_DIR
+from src.config.settings import LOG_DIR, CACHE_DIR, DATA_PERIOD, DATA_INTERVAL, BACKTEST_START_DATE, BACKTEST_END_DATE
 from src.config.model_config import ModelProvider, model_config
 
 # Set up logging
@@ -42,6 +42,12 @@ class StockAgentsCLI:
             "strategy": StrategyAgent(),
             "risk": RiskAgent(),
             "play": PlayAgent()
+        }
+        self.data_settings = {
+            "period": DATA_PERIOD,
+            "interval": DATA_INTERVAL,
+            "backtest_start": BACKTEST_START_DATE,
+            "backtest_end": BACKTEST_END_DATE
         }
         logger.info("CLI initialized with all agents")
 
@@ -266,6 +272,52 @@ class StockAgentsCLI:
         print("\n6. Generating recommendations...")
         self.generate_recommendations()
 
+    async def configure_data_settings(self) -> None:
+        """Configure data frequency and date range settings."""
+        print("\nConfiguring Data Settings:")
+        
+        # Configure data period
+        print("\nAvailable data periods:")
+        periods = ["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"]
+        for i, period in enumerate(periods, 1):
+            print(f"{i}. {period}")
+        
+        while True:
+            try:
+                choice = int(input("\nSelect data period (1-11): ").strip())
+                if 1 <= choice <= len(periods):
+                    self.data_settings["period"] = periods[choice - 1]
+                    break
+                print("Invalid choice. Please try again.")
+            except ValueError:
+                print("Please enter a number.")
+
+        # Configure data interval
+        print("\nAvailable data intervals:")
+        intervals = ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo", "3mo"]
+        for i, interval in enumerate(intervals, 1):
+            print(f"{i}. {interval}")
+        
+        while True:
+            try:
+                choice = int(input("\nSelect data interval (1-13): ").strip())
+                if 1 <= choice <= len(intervals):
+                    self.data_settings["interval"] = intervals[choice - 1]
+                    break
+                print("Invalid choice. Please try again.")
+            except ValueError:
+                print("Please enter a number.")
+
+        # Configure backtest date range
+        print("\nConfigure backtest date range:")
+        self.data_settings["backtest_start"] = input("Enter start date (YYYY-MM-DD): ").strip()
+        self.data_settings["backtest_end"] = input("Enter end date (YYYY-MM-DD): ").strip()
+
+        print("\nData settings updated:")
+        print(f"Period: {self.data_settings['period']}")
+        print(f"Interval: {self.data_settings['interval']}")
+        print(f"Backtest Range: {self.data_settings['backtest_start']} to {self.data_settings['backtest_end']}")
+
     async def configure_llm(self, agent_name: str) -> None:
         """Configure LLM settings for a specific agent through interactive prompts."""
         if agent_name not in self.agents:
@@ -332,8 +384,15 @@ class StockAgentsCLI:
         print(f"Max Tokens: {max_tokens}")
 
     async def show_current_configs(self) -> None:
-        """Display current LLM configurations for all agents."""
-        print("\nCurrent LLM Configurations:")
+        """Display current configurations for all agents and data settings."""
+        print("\nCurrent Configurations:")
+        
+        print("\nData Settings:")
+        print(f"Period: {self.data_settings['period']}")
+        print(f"Interval: {self.data_settings['interval']}")
+        print(f"Backtest Range: {self.data_settings['backtest_start']} to {self.data_settings['backtest_end']}")
+        
+        print("\nLLM Configurations:")
         for agent_name, agent in self.agents.items():
             config = model_config.get_agent_config(agent_name)
             print(f"\n{agent_name} agent:")
@@ -346,21 +405,24 @@ class StockAgentsCLI:
         """Run the CLI interface."""
         while True:
             print("\nStock Agents CLI")
-            print("1. Configure LLM for an agent")
-            print("2. Show current configurations")
-            print("3. Exit")
+            print("1. Configure Data Settings")
+            print("2. Configure LLM for an agent")
+            print("3. Show current configurations")
+            print("4. Exit")
 
-            choice = input("\nEnter your choice (1-3): ").strip()
+            choice = input("\nEnter your choice (1-4): ").strip()
 
             if choice == "1":
+                await self.configure_data_settings()
+            elif choice == "2":
                 print("\nAvailable agents:")
                 for agent in self.agents.keys():
                     print(f"- {agent}")
                 agent_name = input("\nSelect agent to configure: ").strip()
                 await self.configure_llm(agent_name)
-            elif choice == "2":
-                await self.show_current_configs()
             elif choice == "3":
+                await self.show_current_configs()
+            elif choice == "4":
                 print("Exiting...")
                 break
             else:
